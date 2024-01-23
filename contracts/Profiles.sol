@@ -22,11 +22,12 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
     // create Objects for the profiles to be stored
     // TODO mapping address id to person struct?
   //  Person[] public people;
-    uint private id;
+  //  uint private id;
 
     mapping (address => uint8) ownerProfileCount;
     mapping (bytes32 => Profile) public profileDetail;
     mapping (bytes32 => Message) public messageDetail; // Mapping from message ID to Message struct, storing details of each received message.
+
 
     bytes32[] public receivedMessages; // Array to keep track of the IDs of received messages.
 
@@ -51,6 +52,7 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
         uint64 indexed destinationChainSelector,
         address receiver,
         Profile profile,
+        address feeToken,
         uint256 fees
     );
 
@@ -118,6 +120,12 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
         // Get the fee required to send the message
         uint256 fees = client_router.getFee(destinationChainSelector, evm2AnyMessage);
         
+        // make sure user has enough native token
+        if (fees > address(this).balance)
+            revert NotEnoughBalance(address(this).balance, fees);
+
+        
+
         // Send the message through the router and store the returned message ID
         messageId = client_router.ccipSend{value: fees}(
             destinationChainSelector,
@@ -130,6 +138,7 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
             destinationChainSelector,
             receiver,
             profile,
+            address(this),
             fees
         );
 
