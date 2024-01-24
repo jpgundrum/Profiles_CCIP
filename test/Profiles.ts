@@ -1,8 +1,10 @@
 import {time, loadFixture,} from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { expect } from "chai";
+
 //import { ethers } from 'ethers';
 const { ethers } = require("hardhat");
+
 
   // sepolia router address
   const sepolia_router = "0x0BF3dE8c5D3e8A2B34D2BEeB17ABfCeBaf363A59";
@@ -27,8 +29,30 @@ const { ethers } = require("hardhat");
         const [owner, otherAccount] = await ethers.getSigners();
         const Profiles = await ethers.getContractFactory("Profiles");
         const profiles = await Profiles.deploy(sepolia_router);
+
         return {profiles, owner, otherAccount};
     }
+
+    // Used when testing sendTransaction function
+    // note different return value
+    async function deployContractFixture2() {
+      const [owner, otherAccount] = await ethers.getSigners();
+      const Profiles = await ethers.getContractFactory("Profiles");
+      const profiles = await Profiles.deploy(sepolia_router);
+
+      const deployed_contract = profiles.target;
+
+      const Mock = await ethers.getContractFactory("MockRouterClient");
+      const mockedObject = await Mock.deploy(2, toBytes32("messageId"));
+
+      const transaction = {
+        to: profiles.target, 
+        value: 10
+    };
+      await owner.sendTransaction(transaction);
+
+      return {profiles, owner, mockedObject};
+  }
 
   describe("Deployment Testing", function () {
     it("Check owner's address", async function () {
@@ -69,13 +93,73 @@ const { ethers } = require("hardhat");
   });
 
   describe("Test sending message functionality", function() {
-    it("Check sendMessage functionality to from sepolia->goerli" , async function() {
-      const {profiles, owner, otherAccount} = await loadFixture(deployContractFixture);
-      const deployed_contract = profiles.target;
-      const messageId = await profiles.sendMessage(goerli_chain_selector, deployed_contract, Profile);
-      //expect(messageId).to.equal(0);
+    it("Check sendMessage from owner is correct" , async function() {
+      const {profiles, owner, mockedObject} = await loadFixture(deployContractFixture2);
+      const messageId = await profiles.sendMessage(goerli_chain_selector, profiles.target, Profile, mockedObject);
+
+      expect(messageId.from).to.equal(owner.address);
     });
-  
+    it("Check sendMessage to profile contract is correct" , async function() {
+      const {profiles, owner, mockedObject} = await loadFixture(deployContractFixture2);
+      const messageId = await profiles.sendMessage(goerli_chain_selector, profiles.target, Profile, mockedObject);
+      
+      expect(messageId.to).to.equal(profiles.target);
+    });
+  });
+
+// message event has form:     
+    // event MessageSent(
+    //     bytes32 indexed messageId,
+    //     uint64 indexed destinationChainSelector,
+    //     address receiver,
+    //     Profile profile,
+    //     address feeToken,
+    //     uint256 fees
+    // );
+// check to make sure each property is correct
+  describe("Test event/emit functionality in sendMessage", function() {
+    it("Check sendMessage emits correct MessageSent event" , async function() {
+      const {profiles, owner, mockedObject} = await loadFixture(deployContractFixture2);
+      const transaction = await profiles.sendMessage(goerli_chain_selector, profiles.target, Profile, mockedObject);
+      const receipt = await transaction.wait();
+
+      expect(receipt.logs[0].fragment.type).to.equal("event");
+      expect(receipt.logs[0].fragment.name).to.equal("MessageSent");
+    });
+    it("Check sendMessage emits correct MessageSent content" , async function() {
+      const {profiles, owner, mockedObject} = await loadFixture(deployContractFixture2);
+      const transaction = await profiles.sendMessage(goerli_chain_selector, profiles.target, Profile, mockedObject);
+      const receipt = await transaction.wait();
+
+      // check each property except profile
+      // messageId
+      expect(receipt.logs[0].args[0]).to.equal("0x6d65737361676549640000000000000000000000000000000000000000000000");
+      // detinationChainSelector
+      expect(receipt.logs[0].args[1]).to.equal(goerli_chain_selector);
+      // receiver
+      expect(receipt.logs[0].args[2]).to.equal(profiles.target);
+      // feeToken
+      expect(receipt.logs[0].args[4]).to.equal(profiles.target); // TODO may need to change later?
+      // fees
+      expect(receipt.logs[0].args[5]).to.equal(2);
+    });
+    it("Check sendMessage emits correct MessageSent content" , async function() {
+      const {profiles, owner, mockedObject} = await loadFixture(deployContractFixture2);
+      const transaction = await profiles.sendMessage(goerli_chain_selector, profiles.target, Profile, mockedObject);
+      const receipt = await transaction.wait();
+
+      // check each property in the user's profile
+      // user profile id
+      expect(receipt.logs[0].args[3][0]).to.equal(toBytes32("myString"));
+      // user first name
+      expect(receipt.logs[0].args[3][1]).to.equal("John");
+      // user last name
+      expect(receipt.logs[0].args[3][2]).to.equal("Doe");
+      // user nationality
+      expect(receipt.logs[0].args[3][3]).to.equal("American");
+      // user age
+      expect(receipt.logs[0].args[3][4]).to.equal(30);
+    });
   });
 });
   

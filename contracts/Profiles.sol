@@ -7,6 +7,7 @@ import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.s
 import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
 import {IERC20} from "@chainlink/contracts-ccip/src/v0.8/vendor/openzeppelin-solidity/v4.8.0/contracts/token/ERC20/IERC20.sol";
 
+import {MockRouterClient} from "./MockRouterClient.sol";
 
 // Creates a database of users that lives on the blockchain using CCIP
 contract Profiles is CCIPReceiver, OwnerIsCreator {
@@ -97,13 +98,19 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
         bytes32 uniqueId = keccak256(abi.encodePacked(block.timestamp, msg.sender));
         profileDetail[uniqueId] = Profile(uniqueId, _first, _last, _nationality, _age);
         ownerProfileCount[msg.sender] = 1;
-        sendMessage(destinationChainSelector, receiver, profileDetail[uniqueId]);
+
+        MockRouterClient mockedObjectToSend;
+
+
+        sendMessage(destinationChainSelector, receiver, profileDetail[uniqueId], mockedObjectToSend);
     }
 
+    // remove MockRouterClient when testing is completed.
     function sendMessage(
         uint64 destinationChainSelector, 
         address receiver, 
-        Profile memory profile) public returns (bytes32 messageId){
+        Profile memory profile,
+        MockRouterClient mockedObject) public returns (bytes32 messageId){
             Client.EVM2AnyMessage memory evm2AnyMessage = Client.EVM2AnyMessage({
                 receiver: abi.encode(receiver),
                 data: abi.encode(profile),
@@ -114,11 +121,30 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
                 feeToken: address(0) // Setting feeToken to zero address, indicating native asset will be used for fees
             });
         
-        // Initialize a router client instance to interact with cross-chain router
-        IRouterClient client_router = IRouterClient(router);
 
+        ////  uncomment when using real values **********
+        // Initialize a router client instance to interact with cross-chain router
+        // IRouterClient client_router = IRouterClient(router);
+
+        // // Get the fee required to send the message
+        // uint256 fees = client_router.getFee(destinationChainSelector, evm2AnyMessage);
+        
+        // // make sure user has enough native token
+        // if (fees > address(this).balance)
+        //     revert NotEnoughBalance(address(this).balance, fees);
+
+        
+
+        // // Send the message through the router and store the returned message ID
+        // messageId = client_router.ccipSend{value: fees}(
+        //     destinationChainSelector,
+        //     evm2AnyMessage
+        // );
+        //// **************************
+
+        // uncomment when testing: *********
         // Get the fee required to send the message
-        uint256 fees = client_router.getFee(destinationChainSelector, evm2AnyMessage);
+        uint256 fees = mockedObject.getFee(destinationChainSelector, evm2AnyMessage);
         
         // make sure user has enough native token
         if (fees > address(this).balance)
@@ -127,10 +153,11 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
         
 
         // Send the message through the router and store the returned message ID
-        messageId = client_router.ccipSend{value: fees}(
+        messageId = mockedObject.ccipSend{value: fees}(
             destinationChainSelector,
             evm2AnyMessage
         );
+    // ***********************
 
         // Emit an event with message details
         emit MessageSent(
