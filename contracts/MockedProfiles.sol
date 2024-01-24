@@ -10,20 +10,17 @@ import {IERC20} from "@chainlink/contracts-ccip/src/v0.8/vendor/openzeppelin-sol
 import {MockRouterClient} from "./MockRouterClient.sol";
 
 /**
- * THIS IS AN EXAMPLE CONTRACT THAT USES HARDCODED VALUES FOR CLARITY.
- * THIS IS AN EXAMPLE CONTRACT THAT USES UN-AUDITED CODE.
- * DO NOT USE THIS CODE IN PRODUCTION.
+ * USED FOR TESTING PURPOSES IN test/Profiles.ts
  * 
- * Creates a user profile that gets sent to another chain using CCIP
  */
-
-contract Profiles is CCIPReceiver, OwnerIsCreator {
+contract MockedProfiles is CCIPReceiver, OwnerIsCreator {
     // custom errors to provide clarity
     error NoMessageReceived();
     error NotEnoughBalance(uint256 currentBalance, uint256 calculatedFees); // Used to make sure contract has enough balance.
 
     // initialize mappings for profile count, profile and message details
     mapping (address => uint8) ownerProfileCount;
+    mapping (address => bytes32) public userToUniqueId;
     mapping (bytes32 => Profile) public profileDetail;
     mapping (bytes32 => Message) public messageDetail;
 
@@ -93,6 +90,38 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
     }
 
     /**
+    * Used in testing to get profile 
+    * 
+    * Parameters:
+    * -----------
+    * bytes32: uniqueId
+    *   Unique id of the profile
+    * 
+    * Returns:
+    * --------
+    * Profile struct data for the given uniqueId
+    */
+    function getProfile(bytes32 uniqueId) public view returns (Profile memory) {
+        return profileDetail[uniqueId];
+    }
+
+    /**
+    * Used in testing to get unique ID 
+    * 
+    * Parameters:
+    * -----------
+    * address: user
+    *   maps to the user id
+    * 
+    * Returns:
+    * --------
+    * uniqueId mapped the the user's address
+    */
+    function getUniqueIdByUser(address user) external view returns (bytes32) {
+        return userToUniqueId[user];
+    }
+
+    /**
     * Adds a new user profile that is sent to another chain using CCIP
     * 
     * Parameters:
@@ -116,12 +145,14 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
     */
     function addProfile(string memory _first, string memory _last, string memory _nationality, uint8 _age, 
     uint64 destinationChainSelector, address receiver) external {
-        require(ownerProfileCount[msg.sender] == 0);
+        require(ownerProfileCount[msg.sender] == 0, "Sender already has a profile");
         bytes32 uniqueId = keccak256(abi.encodePacked(block.timestamp, msg.sender));
         profileDetail[uniqueId] = Profile(uniqueId, _first, _last, _nationality, _age);
+        userToUniqueId[msg.sender] = uniqueId;
         ownerProfileCount[msg.sender] = 1;
 
-        sendMessage(destinationChainSelector, receiver, profileDetail[uniqueId]);
+        // NOT TESTING BOTTOM FUNCTION IN UNIT TESTS
+      //  sendMessage(destinationChainSelector, receiver, profileDetail[uniqueId], mockedObjectToSend);
     }
 
     /**
@@ -135,6 +166,8 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
     *   Contract on the new chain that will obtain the profile data
     * Profile: profile
     *   Struct that contains user's profile data
+    * MockRouterClient: mockedObject
+    *   Mocked contract test test IRouterClient without making API calls
     * 
     * Events:
     * --------
@@ -151,23 +184,22 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
     function sendMessage(
         uint64 destinationChainSelector, 
         address receiver, 
-        Profile memory profile) public returns (bytes32 messageId){
+        Profile memory profile,
+        MockRouterClient mockedObject) public returns (bytes32 messageId){
             Client.EVM2AnyMessage memory evm2AnyMessage = Client.EVM2AnyMessage({
                 receiver: abi.encode(receiver),
                 data: abi.encode(profile),
                 tokenAmounts: new Client.EVMTokenAmount[](0),
                 extraArgs: Client._argsToBytes(
-                    Client.EVMExtraArgsV1({gasLimit: 400_000})
+                    Client.EVMExtraArgsV1({gasLimit: 400_000}) // Additional arguments, setting gas limit and non-strict sequency mode
                 ),
-                feeToken: address(0)
+                feeToken: address(0) // Setting feeToken to zero address, indicating native asset will be used for fees
             });
-        
 
-        // Initialize a router client instance to interact with cross-chain router
-        IRouterClient client_router = IRouterClient(router);
 
-        // Get the fee required to send the message
-        uint256 fees = client_router.getFee(destinationChainSelector, evm2AnyMessage);
+        // USING MOCKED DATA
+
+        uint256 fees = mockedObject.getFee(destinationChainSelector, evm2AnyMessage);
         
         // make sure user has enough native token
         if (fees > address(this).balance)
@@ -176,7 +208,7 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
         
 
         // Send the message through the router and store the returned message ID
-        messageId = client_router.ccipSend{value: fees}(
+        messageId = mockedObject.ccipSend{value: fees}(
             destinationChainSelector,
             evm2AnyMessage
         );
@@ -195,6 +227,10 @@ contract Profiles is CCIPReceiver, OwnerIsCreator {
         return messageId;
 
         }
+
+    function testCcipReceive(Client.Any2EVMMessage memory any2EvmMessage) public {
+        _ccipReceive(any2EvmMessage);
+    }
 
     /**
     * Receives the most recent CCIP message based on the messageId
