@@ -1,12 +1,10 @@
-1. download node.js and run installer
-2. 
+# CCIP Profile transfer
+User can create a profile and it is communicated to the chain of your choice. Tests provided in test/Profile.ts. Uses mocked files (MockedProfiles.sol, MockRouterClient.sol) to test functionality locally.
 
-Install dependencies:
+### Install dependencies:
 
 ```npm install```
 
-Compile contract:
-```npx hardhat compile```
+### Run the tests:
 
-Run the tests:
 ```npx hardhat test```
